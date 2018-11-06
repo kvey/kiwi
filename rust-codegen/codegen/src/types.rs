@@ -702,6 +702,15 @@ impl Field {
         Ok(())
     }
 
+    fn write_owned_lazy_debug_struct_field<W: Write>(&self, w: &mut W) -> Result<()> {
+        match self.frequency {
+            Frequency::Required => writeln!(w, "        out.field(\"{n}\", &self.get_{n}());", n=self.name)? ,
+            Frequency::Optional => writeln!(w, "        if self.{n}.is_some() {{ out.field(\"{n}\", &self.get_{n}()); }}", n=self.name)? ,
+
+            Frequency::Repeated => writeln!(w, "        if !self.{n}.is_empty()  {{ out.field(\"{n}\", &self.get_{n}()); }}", n=self.name)?
+        }
+        Ok(())
+    }
 
 
 
@@ -767,8 +776,11 @@ impl Message {
         println!("Writing message {}{}", self.get_modules(desc), self.name);
         writeln!(w, "")?;
 
+        // Initial definitions
         self.write_definition(w, desc)?;
         writeln!(w, "")?;
+
+        // Fully resolved, all nested messages decoded
         self.write_impl_message_read(w, desc)?;
         writeln!(w, "")?;
         self.write_impl_message_write(w, desc)?;
@@ -777,8 +789,12 @@ impl Message {
         writeln!(w, "")?;
         self.write_impl_message_debug(w, desc)?;
         writeln!(w, "")?;
+
+        // Accessor methods for lazy representations
         self.write_definition_accessor_trait(w, desc)?;
         writeln!(w, "")?;
+
+        // Lazy representation, only 1 level deep of byte sliced contents
         self.write_definition_lazy(w, desc)?;
         writeln!(w, "")?;
         self.write_impl_message_lazy_read(w, desc)?;
@@ -787,9 +803,13 @@ impl Message {
         writeln!(w, "")?;
         self.write_impl_message_lazy_accessors(w, desc)?;
         writeln!(w, "")?;
+
+        // OwnedLazy representation, lazy representation converted to owned Vecs
         self.write_definition_lazy_owned(w, desc)?;
         writeln!(w, "")?;
         self.write_impl_message_owned_lazy_general(w, desc)?;
+        writeln!(w, "")?;
+        self.write_impl_message_owned_lazy_debug(w, desc)?;
         writeln!(w, "")?;
         self.write_impl_message_owned_lazy_accessors(w, desc)?;
 
@@ -900,9 +920,8 @@ impl Message {
         Ok(())
     }
 
-
     fn write_definition_lazy_owned<W: Write>(&self, w: &mut W, desc: &FileDescriptor) -> Result<()> {
-        writeln!(w, "#[derive(Debug, Default, PartialEq, Clone)]")?;
+        writeln!(w, "#[derive(Default, PartialEq, Clone)]")?;
         if self.is_unit() {
             writeln!(w, "pub struct OwnedLazy{} {{ }}", self.name)?;
             return Ok(());
@@ -917,7 +936,6 @@ impl Message {
 
         Ok(())
     }
-
 
     fn write_impl_message_read<W: Write>(&self, w: &mut W, desc: &FileDescriptor) -> Result<()> {
         if self.is_unit() {
@@ -1168,6 +1186,24 @@ impl Message {
         self.write_owned_lazy_shallow_merge_operation(w, desc)?;
         writeln!(w, "")?;
         self.write_convert_owned_to_resolved(w, desc)?;
+        writeln!(w, "}}")?;
+        Ok(())
+    }
+
+    fn write_impl_message_owned_lazy_debug<W: Write>(&self, w: &mut W, desc: &FileDescriptor) -> Result<()> {
+        if self.is_unit() {
+            writeln!(w, "impl fmt::Debug for OwnedLazy{} {{ }}", self.name)?;
+            return Ok(());
+        }
+
+        writeln!(w, "impl<'a> fmt::Debug for OwnedLazy{} {{", self.name)?;
+        writeln!(w, "    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {{")?;
+        writeln!(w, "        let mut out = fmt.debug_struct(\"OwnedLazy{}\");", self.name)?;
+        for f in self.fields.iter().filter(|f| !f.deprecated) {
+            f.write_owned_lazy_debug_struct_field(w)?;
+        }
+        writeln!(w, "        out.finish()")?;
+        writeln!(w, "    }}")?;
         writeln!(w, "}}")?;
         Ok(())
     }
