@@ -6,3 +6,6 @@ description = "This is a Rust library with some helper routines for parsing file
 repository = "https://github.com/evanw/kiwi"
 readme = "../README.md"
 license = "MIT"
+
+[dependencies]
+fnv = "1.0.6"

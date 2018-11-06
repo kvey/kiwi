@@ -16,9 +16,10 @@
 //! assert_eq!(format!("{:?}", value), "Point {x: 0.5, y: -0.5}");
 //! assert_eq!(value.encode(&schema), [126, 0, 0, 0, 126, 1, 0, 0]);
 //! ```
+extern crate fnv;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 use std::f32;
 use std::fmt;
 use std::ops::Index;
@@ -586,14 +587,14 @@ pub struct Def {
   /// the `fields` array to its index in that array. This is helpful when
   /// decoding and encoding a field to be able to quickly get to the field
   /// metadata.
-  pub field_value_to_index: HashMap<u32, usize>,
-  pub field_name_to_index: HashMap<String, usize>,
+  pub field_value_to_index: FnvHashMap<u32, usize>,
+  pub field_name_to_index: FnvHashMap<String, usize>,
 }
 
 impl Def {
   pub fn new(name: String, kind: DefKind, fields: Vec<Field>) -> Def {
-    let mut field_value_to_index = HashMap::new();
-    let mut field_name_to_index = HashMap::new();
+    let mut field_value_to_index = FnvHashMap::default();
+    let mut field_name_to_index = FnvHashMap::default();
     for (i, field) in fields.iter().enumerate() {
       field_value_to_index.insert(field.value, i);
       field_name_to_index.insert(field.name.clone(), i);
@@ -635,12 +636,12 @@ pub struct Schema {
   /// Maps the `name` member of each [Def](struct.Def.html) in the `defs` array
   /// to its index in that array. This is helpful when decoding and encoding a
   /// field to be able to quickly get to the field metadata.
-  pub def_name_to_index: HashMap<String, usize>,
+  pub def_name_to_index: FnvHashMap<String, usize>,
 }
 
 impl Schema {
   pub fn new(mut defs: Vec<Def>) -> Schema {
-    let mut def_name_to_index = HashMap::new();
+    let mut def_name_to_index = FnvHashMap::default();
     for (i, def) in defs.iter_mut().enumerate() {
       def.index = i as i32;
       def_name_to_index.insert(def.name.clone(), i);
@@ -812,7 +813,7 @@ pub enum Value<'a> {
   String(String),
   Array(Vec<Value<'a>>),
   Enum(&'a str, &'a str),
-  Object(&'a str, HashMap<&'a str, Value<'a>>),
+  Object(&'a str, FnvHashMap<&'a str, Value<'a>>),
 }
 
 impl<'a> Value<'a> {
@@ -951,7 +952,7 @@ impl<'a> Value<'a> {
           },
 
           DefKind::Struct => {
-            let mut fields = HashMap::new();
+            let mut fields = FnvHashMap::default();
             for field in &def.fields {
               fields.insert(field.name.as_str(), Value::decode_field_bb(schema, field, bb)?);
             }
@@ -959,7 +960,7 @@ impl<'a> Value<'a> {
           },
 
           DefKind::Message => {
-            let mut fields = HashMap::new();
+            let mut fields = FnvHashMap::default();
             loop {
               let value = bb.read_var_uint()?;
               if value == 0 {
@@ -1103,7 +1104,7 @@ fn value_basic() {
     Value::String("abc".to_owned()),
     Value::Enum("Foo", "FOO"),
     Value::Object("Obj", {
-      let mut map = HashMap::new();
+      let mut map = FnvHashMap::default();
       map.insert("key1", Value::String("value1".to_owned()));
       map.insert("key2", Value::String("value2".to_owned()));
       map
@@ -1120,7 +1121,7 @@ fn value_basic() {
   assert_eq!(value[5], Value::String("abc".to_owned()));
   assert_eq!(value[6], Value::Enum("Foo", "FOO"));
   assert_eq!(value[7], Value::Object("Obj", {
-    let mut map = HashMap::new();
+    let mut map = FnvHashMap::default();
     map.insert("key1", Value::String("value1".to_owned()));
     map.insert("key2", Value::String("value2".to_owned()));
     map
@@ -1155,7 +1156,7 @@ fn value_push() {
 
 #[test]
 fn value_set() {
-  let mut value = Value::Object("Foo", HashMap::new());
+  let mut value = Value::Object("Foo", FnvHashMap::default());
   assert_eq!(value.get("x"), None);
 
   value.set("x", Value::Int(123));
@@ -1172,7 +1173,7 @@ fn value_set() {
 
 #[test]
 fn value_remove() {
-  let mut value = Value::Object("Foo", HashMap::new());
+  let mut value = Value::Object("Foo", FnvHashMap::default());
   assert_eq!(value.get("x"), None);
 
   value.set("x", Value::Int(123));
@@ -1249,25 +1250,25 @@ fn value_encode_and_decode() {
   assert_eq!(Value::Enum("Enum", "FOO").encode(&schema), [100]);
   assert_eq!(Value::Enum("Enum", "BAR").encode(&schema), [200, 1]);
 
-  fn insert<'a>(mut map: HashMap<&'a str, Value<'a>>, key: &'a str, value: Value<'a>) -> HashMap<&'a str, Value<'a>> {
+  fn insert<'a>(mut map: FnvHashMap<&'a str, Value<'a>>, key: &'a str, value: Value<'a>) -> FnvHashMap<&'a str, Value<'a>> {
     map.insert(key, value);
     map
   }
 
-  let empty_struct = Value::Object("Struct", insert(insert(HashMap::new(),
+  let empty_struct = Value::Object("Struct", insert(insert(FnvHashMap::default(),
     "v_enum", Value::Array(vec![])),
-    "v_message", Value::Object("Message", HashMap::new()))
+    "v_message", Value::Object("Message", FnvHashMap::default()))
   );
 
   assert_eq!(Value::decode(&schema, 1, &[0, 0]), Ok(empty_struct.clone()));
   assert_eq!(empty_struct.encode(&schema), [0, 0]);
 
-  let full_struct = Value::Object("Struct", insert(insert(HashMap::new(),
+  let full_struct = Value::Object("Struct", insert(insert(FnvHashMap::default(),
     "v_enum", Value::Array(vec![
       Value::Enum("Enum", "FOO"),
       Value::Enum("Enum", "BAR"),
     ])),
-    "v_message", Value::Object("Message", insert(HashMap::new(),
+    "v_message", Value::Object("Message", insert(FnvHashMap::default(),
       "v_string", Value::String("🍕".to_owned()))
     ))
   );
@@ -1275,27 +1276,27 @@ fn value_encode_and_decode() {
   assert_eq!(Value::decode(&schema, 1, &[2, 100, 200, 1, 6, 240, 159, 141, 149, 0, 0]), Ok(full_struct.clone()));
   assert_eq!(full_struct.encode(&schema), [2, 100, 200, 1, 6, 240, 159, 141, 149, 0, 0]);
 
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_bool", Value::Bool(false))).encode(&schema), [1, 0, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_bool", Value::Bool(true))).encode(&schema), [1, 1, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_byte", Value::Byte(255))).encode(&schema), [2, 255, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_int", Value::Int(-1))).encode(&schema), [3, 1, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_uint", Value::UInt(1))).encode(&schema), [4, 1, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_float", Value::Float(0.0))).encode(&schema), [5, 0, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_string", Value::String("".to_owned()))).encode(&schema), [6, 0, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_enum", Value::Enum("Enum", "FOO"))).encode(&schema), [7, 100, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_struct", empty_struct.clone())).encode(&schema), [8, 0, 0, 0]);
-  assert_eq!(Value::Object("Message", insert(HashMap::new(), "v_message", Value::Object("Message", HashMap::new()))).encode(&schema), [9, 0, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_bool", Value::Bool(false))).encode(&schema), [1, 0, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_bool", Value::Bool(true))).encode(&schema), [1, 1, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_byte", Value::Byte(255))).encode(&schema), [2, 255, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_int", Value::Int(-1))).encode(&schema), [3, 1, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_uint", Value::UInt(1))).encode(&schema), [4, 1, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_float", Value::Float(0.0))).encode(&schema), [5, 0, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_string", Value::String("".to_owned()))).encode(&schema), [6, 0, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_enum", Value::Enum("Enum", "FOO"))).encode(&schema), [7, 100, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_struct", empty_struct.clone())).encode(&schema), [8, 0, 0, 0]);
+  assert_eq!(Value::Object("Message", insert(FnvHashMap::default(), "v_message", Value::Object("Message", FnvHashMap::default()))).encode(&schema), [9, 0, 0]);
 
-  assert_eq!(Value::decode(&schema, 2, &[1, 0, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_bool", Value::Bool(false)))));
-  assert_eq!(Value::decode(&schema, 2, &[1, 1, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_bool", Value::Bool(true)))));
-  assert_eq!(Value::decode(&schema, 2, &[2, 255, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_byte", Value::Byte(255)))));
-  assert_eq!(Value::decode(&schema, 2, &[3, 1, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_int", Value::Int(-1)))));
-  assert_eq!(Value::decode(&schema, 2, &[4, 1, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_uint", Value::UInt(1)))));
-  assert_eq!(Value::decode(&schema, 2, &[5, 0, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_float", Value::Float(0.0)))));
-  assert_eq!(Value::decode(&schema, 2, &[6, 0, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_string", Value::String("".to_owned())))));
-  assert_eq!(Value::decode(&schema, 2, &[7, 100, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_enum", Value::Enum("Enum", "FOO")))));
-  assert_eq!(Value::decode(&schema, 2, &[8, 0, 0, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_struct", empty_struct.clone()))));
-  assert_eq!(Value::decode(&schema, 2, &[9, 0, 0]), Ok(Value::Object("Message", insert(HashMap::new(), "v_message", Value::Object("Message", HashMap::new())))));
+  assert_eq!(Value::decode(&schema, 2, &[1, 0, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_bool", Value::Bool(false)))));
+  assert_eq!(Value::decode(&schema, 2, &[1, 1, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_bool", Value::Bool(true)))));
+  assert_eq!(Value::decode(&schema, 2, &[2, 255, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_byte", Value::Byte(255)))));
+  assert_eq!(Value::decode(&schema, 2, &[3, 1, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_int", Value::Int(-1)))));
+  assert_eq!(Value::decode(&schema, 2, &[4, 1, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_uint", Value::UInt(1)))));
+  assert_eq!(Value::decode(&schema, 2, &[5, 0, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_float", Value::Float(0.0)))));
+  assert_eq!(Value::decode(&schema, 2, &[6, 0, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_string", Value::String("".to_owned())))));
+  assert_eq!(Value::decode(&schema, 2, &[7, 100, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_enum", Value::Enum("Enum", "FOO")))));
+  assert_eq!(Value::decode(&schema, 2, &[8, 0, 0, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_struct", empty_struct.clone()))));
+  assert_eq!(Value::decode(&schema, 2, &[9, 0, 0]), Ok(Value::Object("Message", insert(FnvHashMap::default(), "v_message", Value::Object("Message", FnvHashMap::default())))));
 }
 
 // This test case is for a bug where rustc was silently inferring an incorrect
